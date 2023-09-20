@@ -1,3 +1,14 @@
+<#
+.SYNOPSIS
+This script manages Direct3D registry entries for various executable files, allowing the user to install, remove, or list registry entries.
+.DESCRIPTION
+The script facilitates the management of Direct3D registry settings by:
+- Creating the main registry path if it does not exist
+- Prompting users to install new settings, remove existing ones, or list all current entries
+.EXAMPLE
+Run the script and follow the on-screen prompts to manage Direct3D registry entries.
+#>
+
 # Define the main registry path
 $MainRegistryPath = "HKCU:\SOFTWARE\Microsoft\Direct3D"
 
@@ -9,7 +20,11 @@ if (-not (Test-Path -Path $MainRegistryPath)) {
 Function Get-Action {
     # Prompt the user to choose whether to install, remove, or list entries
     do {
-        $Action = Read-Host "Do you want to install, remove, or list entries? (i/r/l)"
+        $Action = Read-Host "Do you want to install, remove, or list entries, or exit? (i/r/l/x)"
+        if ($Action -eq 'x') {
+            Write-Host "Exiting script..."
+            exit
+        }
     } while ($Action -ne 'i' -and $Action -ne 'r' -and $Action -ne 'l')
 
     return $Action
@@ -21,14 +36,20 @@ Function Get-D3DBehaviors {
         Write-Host "Choose an option for D3DBehaviors:"
         Write-Host "1. BufferUpgradeOverride=1"
         Write-Host "2. BufferUpgradeOverride=1;BufferUpgradeEnable10Bit=1"
-        $Choice = Read-Host "Enter the number corresponding to your choice"
+        $Choice = Read-Host "Enter the number corresponding to your choice, or enter 'x' to exit"
         
         if ($Choice -eq "1") {
             $D3DBehaviors = "BufferUpgradeOverride=1"
-        } elseif ($Choice -eq "2") {
+        }
+        elseif ($Choice -eq "2") {
             $D3DBehaviors = "BufferUpgradeOverride=1;BufferUpgradeEnable10Bit=1"
-        } else {
-            Write-Host "Invalid choice. Please enter 1 or 2 for the D3DBehaviors option."
+        }
+        elseif ($Choice -eq 'x') {
+            Write-Host "Exiting script..."
+            exit
+        }
+        else {
+            Write-Host "Invalid choice. Please enter 1, 2 or 'x' to exit."
         }
     } while ($Choice -ne '1' -and $Choice -ne '2')
     
@@ -39,16 +60,16 @@ Function Perform-Action {
     param (
         [string]$Action
     )
-
+    
     if ($Action -eq "i") {
-        # Prompt the user for the "Name" value
-        $Name = Read-Host "Enter the name of the .exe (e.g., Starfield.exe)"
+        $Name = Read-Host "Enter the name of the .exe (e.g., Starfield.exe), or enter 'x' to exit"
+        if ($Name -eq 'x') {
+            Write-Host "Exiting script..."
+            exit
+        }
         $D3DBehaviors = Get-D3DBehaviors
-        
-        # Define the registry path including the name
         $RegistryPath = Join-Path -Path $MainRegistryPath -ChildPath $Name
-
-        # Create a new subkey for the .exe and set the "Name" and "D3DBehaviors" values in the registry
+        
         if (-not (Test-Path -Path $RegistryPath)) {
             New-Item -Path $RegistryPath -Force
         }
@@ -56,69 +77,73 @@ Function Perform-Action {
         Set-ItemProperty -Path $RegistryPath -Name "D3DBehaviors" -Value $D3DBehaviors
 
         Write-Host "Registry values installed."
-
-    } elseif ($Action -eq "r") {
-        # Get the list of existing subkeys
+        
+    }
+    elseif ($Action -eq "r") {
         $SubKeys = Get-ChildItem -Path $MainRegistryPath
 
-        # If no subkeys are found, notify the user
         if ($SubKeys.Count -eq 0) {
             Write-Host "No entries found."
-        } else {
-            # Display the list of subkeys and prompt the user to choose one to remove
-            $Index = 0
+        }
+        else {
+            $Index = 1
             foreach ($SubKey in $SubKeys) {
-                Write-Host "$Index. $($SubKey.Name -replace '.*\\', '')"
+                $SubKeyDetail = Get-Item -LiteralPath $SubKey.PSPath
+                Write-Host "$Index. $($SubKeyDetail.Name -replace '.*\\', '')"
+                $SubKeys[$Index - 1] = $SubKeyDetail
                 $Index++
             }
+
+            $Choice = Read-Host "Enter the number corresponding to the entry you wish to remove, or enter 'all' to remove all entries, or enter 'x' to exit"
             
-            # Get user choice for removal
-            $Choice = Read-Host "Enter the number corresponding to the entry you wish to remove, or enter 'all' to remove all entries"
-            
-            if ($Choice -eq 'all') {
-                # Confirm before removing all entries
-                $Confirm = Read-Host "Are you sure you want to remove all entries? (y/n)"
-                if ($Confirm -eq 'y') {
+            if ($Choice -eq 'x') {
+                Write-Host "Exiting script..."
+                exit
+            }
+            elseif ($Choice -eq 'all') {
+                $Confirm = Read-Host "Are you sure you want to remove all entries? (y/n/x)"
+                if ($Confirm -eq 'x') {
+                    Write-Host "Exiting script..."
+                    exit
+                }
+                elseif ($Confirm -eq 'y') {
                     Remove-Item -Path $MainRegistryPath -Recurse -Force
                     New-Item -Path $MainRegistryPath -Force
                     Write-Host "All entries removed."
                 }
-            } else {
-                # Remove the chosen entry
-                try {
-                    $SelectedSubKey = $SubKeys[[int]$Choice]
-                    Remove-Item -Path $SelectedSubKey.FullName -Force
+            }
+            else {
+                if ($Choice -match '^\d+$' -and [int]$Choice -ge 1 -and [int]$Choice -le $SubKeys.Count) {
+                    $SelectedSubKey = $SubKeys[[int]$Choice - 1]
+                    Remove-Item -Path $SelectedSubKey.PSPath -Force
                     Write-Host "Entry removed."
-                } catch {
+                }
+                else {
                     Write-Host "Invalid choice. No entries were removed."
                 }
             }
         }
 
-    } elseif ($Action -eq "l") {
-        # Get and display the list of existing subkeys
+        
+    }
+    elseif ($Action -eq "l") {
         $SubKeys = Get-ChildItem -Path $MainRegistryPath
 
-        # If no subkeys are found, notify the user
         if ($SubKeys.Count -eq 0) {
             Write-Host "No entries found."
-        } else {
-            # Display the list of subkeys
+        }
+        else {
             foreach ($SubKey in $SubKeys) {
                 Write-Host "$($SubKey.Name -replace '.*\\', '')"
             }
         }
-
-        # Re-prompt the user for their action
-        $Action = Get-Action
-        Perform-Action -Action $Action
     }
 }
 
-# Get the initial action from the user
-$Action = Get-Action
+do {
+    # Get the initial action from the user
+    $Action = Get-Action
 
-# Perform the initial action
-Perform-Action -Action $Action
-
-Write-Host "Script completed."
+    # Perform the initial action
+    Perform-Action -Action $Action
+} while ($true)
